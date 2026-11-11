@@ -47,8 +47,6 @@
   <main>
     <section aria-labelledby="engineer-title">
       <h2 id="engineer-title">Engineer</h2>
-      <label for="engineer-name">Engineer name</label>
-      <input id="engineer-name" autocomplete="off" maxlength="160" placeholder="Enter full name">
       <div class="pad">
         <canvas id="engineer-pad" aria-label="Draw engineer signature" role="img"></canvas>
         <span class="hint">Draw engineer signature here</span>
@@ -60,8 +58,6 @@
     </section>
     <section aria-labelledby="customer-title">
       <h2 id="customer-title">Customer</h2>
-      <label for="customer-name">Customer name</label>
-      <input id="customer-name" autocomplete="off" maxlength="160" placeholder="Enter full name">
       <div class="pad">
         <canvas id="customer-pad" aria-label="Draw customer signature" role="img"></canvas>
         <span class="hint">Draw customer signature here</span>
@@ -73,7 +69,7 @@
     </section>
     <div>
       <button id="download" class="primary" type="button">Create signature sheet</button>
-      <p id="status" role="status" aria-live="polite">Enter both names and review both signatures before downloading.</p>
+      <p id="status" role="status" aria-live="polite">Draw both signatures before creating the sheet.</p>
       <div id="sheet-actions" hidden>
         <img id="sheet-preview" alt="Preview of the signature sheet">
         <a id="save-sheet" class="download-link" download="installation-signatures.png">Download PNG</a>
@@ -81,7 +77,7 @@
         <p>If the download does not open, press and hold the preview to see your phone’s image-saving options.</p>
       </div>
     </div>
-    <p class="privacy">Names and signatures stay on this device until you download the sheet. This page does not send them to the bot.</p>
+    <p class="privacy">The signature sheet is generated on this device.</p>
   </main>
   <script>
     'use strict';
@@ -193,8 +189,8 @@
     createSheet.addEventListener('click', () => {
       status.classList.remove('error');
       for (const [role, pad] of pads) {
-        if (!document.getElementById(`${role}-name`).value.trim() || !pad.strokes.length || pad.pointer !== null) {
-          status.textContent = `Enter the ${role} name and finish drawing the ${role} signature.`;
+        if (!pad.strokes.length || pad.pointer !== null) {
+          status.textContent = `Finish drawing the ${role} signature.`;
           status.classList.add('error');
           return;
         }
@@ -213,10 +209,8 @@
         context.fillStyle = '#172b40';
         context.font = 'bold 24px sans-serif';
         context.fillText(role === 'engineer' ? 'Engineer' : 'Customer', 60, top + 30);
-        context.font = '22px sans-serif';
-        context.fillText(document.getElementById(`${role}-name`).value.trim(), 60, top + 70, 1080);
         context.save();
-        context.translate(60, top + 100);
+        context.translate(60, top + 55);
         context.strokeStyle = '#d7e2e8';
         context.strokeRect(0, 0, 1080, 250);
         const bounds = pad.canvas.getBoundingClientRect();
