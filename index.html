@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
   <title>YTL Broadband · Signatures</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root { font-family: Inter, system-ui, sans-serif; color: #172b40; background: #eff4f7; }
     * { box-sizing: border-box; }
@@ -31,9 +32,6 @@
     .primary { width: 100%; color: white; background: #116f79; padding: 16px; }
     #status { margin: 12px 4px 0; font-size: 14px; color: #526679; }
     #status.error { color: #a52d36; }
-    .privacy { margin: 0 4px; font-size: 12px; color: #667c8c; text-align: center; }
-    #sheet-preview { display: block; width: 100%; border: 1px solid #d7e2e8; border-radius: 9px; margin: 12px 0; }
-    .download-link { display: inline-block; margin: 8px 12px 8px 0; color: #116f79; font-weight: 650; }
     @media (max-width: 380px) { section { padding: 15px; } canvas { height: 180px; } }
     @media (prefers-reduced-motion: no-preference) { button { transition: background .15s; } button:hover { filter: brightness(.95); } }
   </style>
@@ -68,40 +66,18 @@
       </div>
     </section>
     <div>
-      <button id="download" class="primary" type="button">Create signature sheet</button>
-      <p id="status" role="status" aria-live="polite">Draw both signatures before creating the sheet.</p>
-      <div id="sheet-actions" hidden>
-        <img id="sheet-preview" alt="Preview of the signature sheet">
-        <a id="save-sheet" class="download-link" download="installation-signatures.png">Download PNG</a>
-        <button id="share-sheet" class="secondary" type="button" hidden>Share PNG</button>
-        <p>If the download does not open, press and hold the preview to see your phone’s image-saving options.</p>
-      </div>
+      <button id="submit-signatures" class="primary" type="button">Submit signatures</button>
+      <p id="status" role="status" aria-live="polite">Draw both signatures, then submit them to the bot.</p>
     </div>
-    <p class="privacy">The signature sheet is generated on this device.</p>
   </main>
   <script>
     'use strict';
     const pads = new Map();
     const status = document.getElementById('status');
-    const createSheet = document.getElementById('download');
-    const sheetActions = document.getElementById('sheet-actions');
-    const preview = document.getElementById('sheet-preview');
-    const saveSheet = document.getElementById('save-sheet');
-    const shareSheet = document.getElementById('share-sheet');
-    let sheetUrl;
-    let sheetFile;
-
-    shareSheet.addEventListener('click', async () => {
-      if (!sheetFile) return;
-      try {
-        await navigator.share({ files: [sheetFile] });
-      } catch (error) {
-        if (error.name === 'AbortError') return;
-        console.warn('Signature sheet sharing failed:', error.name);
-        status.textContent = 'Sharing failed. Try Download PNG or press and hold the preview.';
-        status.classList.add('error');
-      }
-    });
+    const submit = document.getElementById('submit-signatures');
+    const telegram = window.Telegram?.WebApp;
+    const request = new URLSearchParams(window.location.search).get('request');
+    telegram?.ready();
 
     function drawStrokes(context, strokes, width, height) {
       context.strokeStyle = '#172b40';
@@ -186,64 +162,50 @@
       pad.redraw();
     }));
 
-    createSheet.addEventListener('click', () => {
+    function encodeSignature(pad, step) {
+      const bytes = [];
+      for (const stroke of pad.strokes) {
+        if (bytes.length) bytes.push(255);
+        for (let index = 0; index < stroke.length; index += step) {
+          const point = stroke[index];
+          bytes.push(Math.round(point.x * 254), Math.round(point.y * 254));
+        }
+        if ((stroke.length - 1) % step) {
+          const last = stroke[stroke.length - 1];
+          bytes.push(Math.round(last.x * 254), Math.round(last.y * 254));
+        }
+      }
+      const bounds = pad.canvas.getBoundingClientRect();
+      return [Number((bounds.width / bounds.height).toFixed(3)), btoa(bytes.map(byte => String.fromCharCode(byte)).join(''))];
+    }
+
+    submit.addEventListener('click', () => {
       status.classList.remove('error');
-      for (const [role, pad] of pads) {
-        if (!pad.strokes.length || pad.pointer !== null) {
-          status.textContent = `Finish drawing the ${role} signature.`;
-          status.classList.add('error');
-          return;
+      try {
+        if (!telegram?.sendData || !/^[a-f0-9]{8}$/.test(request || '')) {
+          throw new Error('Open the signing page from the keyboard in the Telegram bot.');
         }
-      }
-      const sheet = document.createElement('canvas');
-      sheet.width = 1200;
-      sheet.height = 1040;
-      const context = sheet.getContext('2d');
-      context.fillStyle = 'white';
-      context.fillRect(0, 0, sheet.width, sheet.height);
-      context.fillStyle = '#172b40';
-      context.font = 'bold 30px sans-serif';
-      context.fillText('YTL BROADBAND · SIGNATURE SHEET', 60, 65);
-      let top = 110;
-      for (const [role, pad] of pads) {
-        context.fillStyle = '#172b40';
-        context.font = 'bold 24px sans-serif';
-        context.fillText(role === 'engineer' ? 'Engineer' : 'Customer', 60, top + 30);
-        context.save();
-        context.translate(60, top + 55);
-        context.strokeStyle = '#d7e2e8';
-        context.strokeRect(0, 0, 1080, 250);
-        const bounds = pad.canvas.getBoundingClientRect();
-        const scale = Math.min(1080 / bounds.width, 250 / bounds.height);
-        const width = bounds.width * scale;
-        const height = bounds.height * scale;
-        context.translate((1080 - width) / 2, (250 - height) / 2);
-        drawStrokes(context, pad.strokes, width, height);
-        context.restore();
-        top += 400;
-      }
-      context.font = '18px sans-serif';
-      context.fillText('Captured ' + new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }) + ' MYT', 60, 985);
-      status.textContent = 'Creating signature sheet…';
-      createSheet.disabled = true;
-      sheet.toBlob(blob => {
-        createSheet.disabled = false;
-        if (!blob || !blob.size) {
-          console.warn('Signature sheet PNG encoding returned no data.');
-          status.textContent = 'The sheet could not be created. Please try again.';
-          status.classList.add('error');
-          return;
+        for (const [role, pad] of pads) {
+          const distinct = new Set(pad.strokes.flat().map(point => `${Math.round(point.x * 254)},${Math.round(point.y * 254)}`));
+          if (distinct.size < 2 || pad.pointer !== null) throw new Error(`Finish drawing the ${role} signature.`);
         }
-        if (sheetUrl) URL.revokeObjectURL(sheetUrl);
-        sheetUrl = URL.createObjectURL(blob);
-        preview.src = sheetUrl;
-        saveSheet.href = sheetUrl;
-        sheetFile = new File([blob], 'installation-signatures.png', { type: 'image/png' });
-        shareSheet.hidden = !(navigator.share && navigator.canShare?.({ files: [sheetFile] }));
-        sheetActions.hidden = false;
-        console.info('Signature sheet PNG encoded:', blob.size, 'bytes');
-        status.textContent = `Signature sheet ready (${blob.size.toLocaleString()} bytes). Preview it below.`;
-      }, 'image/png');
+        let payload;
+        for (let step = 1; step <= 128; step *= 2) {
+          payload = JSON.stringify({request, engineer: encodeSignature(pads.get('engineer'), step),
+                                             customer: encodeSignature(pads.get('customer'), step)});
+          if (new TextEncoder().encode(payload).length <= 4096) break;
+        }
+        if (new TextEncoder().encode(payload).length > 4096) {
+          throw new Error('The drawings are too large. Please clear them and sign again.');
+        }
+        status.textContent = 'Submitting signatures to the bot…';
+        submit.disabled = true;
+        telegram.sendData(payload);
+      } catch (error) {
+        submit.disabled = false;
+        status.textContent = error.message || 'Could not submit. Please try again.';
+        status.classList.add('error');
+      }
     });
   </script>
 </body>
