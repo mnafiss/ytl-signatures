@@ -32,6 +32,8 @@
     #status { margin: 12px 4px 0; font-size: 14px; color: #526679; }
     #status.error { color: #a52d36; }
     .privacy { margin: 0 4px; font-size: 12px; color: #667c8c; text-align: center; }
+    #sheet-preview { display: block; width: 100%; border: 1px solid #d7e2e8; border-radius: 9px; margin: 12px 0; }
+    .download-link { display: inline-block; margin: 8px 12px 8px 0; color: #116f79; font-weight: 650; }
     @media (max-width: 380px) { section { padding: 15px; } canvas { height: 180px; } }
     @media (prefers-reduced-motion: no-preference) { button { transition: background .15s; } button:hover { filter: brightness(.95); } }
   </style>
@@ -70,8 +72,14 @@
       </div>
     </section>
     <div>
-      <button id="download" class="primary" type="button">Download signature sheet</button>
+      <button id="download" class="primary" type="button">Create signature sheet</button>
       <p id="status" role="status" aria-live="polite">Enter both names and review both signatures before downloading.</p>
+      <div id="sheet-actions" hidden>
+        <img id="sheet-preview" alt="Preview of the signature sheet">
+        <a id="save-sheet" class="download-link" download="installation-signatures.png">Download PNG</a>
+        <button id="share-sheet" class="secondary" type="button" hidden>Share PNG</button>
+        <p>If the download does not open, press and hold the preview to see your phone’s image-saving options.</p>
+      </div>
     </div>
     <p class="privacy">Names and signatures stay on this device until you download the sheet. This page does not send them to the bot.</p>
   </main>
@@ -79,6 +87,25 @@
     'use strict';
     const pads = new Map();
     const status = document.getElementById('status');
+    const createSheet = document.getElementById('download');
+    const sheetActions = document.getElementById('sheet-actions');
+    const preview = document.getElementById('sheet-preview');
+    const saveSheet = document.getElementById('save-sheet');
+    const shareSheet = document.getElementById('share-sheet');
+    let sheetUrl;
+    let sheetFile;
+
+    shareSheet.addEventListener('click', async () => {
+      if (!sheetFile) return;
+      try {
+        await navigator.share({ files: [sheetFile] });
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+        console.warn('Signature sheet sharing failed:', error.name);
+        status.textContent = 'Sharing failed. Try Download PNG or press and hold the preview.';
+        status.classList.add('error');
+      }
+    });
 
     function drawStrokes(context, strokes, width, height) {
       context.strokeStyle = '#172b40';
@@ -163,7 +190,7 @@
       pad.redraw();
     }));
 
-    document.getElementById('download').addEventListener('click', () => {
+    createSheet.addEventListener('click', () => {
       status.classList.remove('error');
       for (const [role, pad] of pads) {
         if (!document.getElementById(`${role}-name`).value.trim() || !pad.strokes.length || pad.pointer !== null) {
@@ -203,19 +230,25 @@
       }
       context.font = '18px sans-serif';
       context.fillText('Captured ' + new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }) + ' MYT', 60, 985);
+      status.textContent = 'Creating signature sheet…';
+      createSheet.disabled = true;
       sheet.toBlob(blob => {
-        if (!blob) {
+        createSheet.disabled = false;
+        if (!blob || !blob.size) {
+          console.warn('Signature sheet PNG encoding returned no data.');
           status.textContent = 'The sheet could not be created. Please try again.';
           status.classList.add('error');
           return;
         }
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'installation-signatures.png';
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-        status.textContent = 'Signature sheet created. Check your downloads.';
+        if (sheetUrl) URL.revokeObjectURL(sheetUrl);
+        sheetUrl = URL.createObjectURL(blob);
+        preview.src = sheetUrl;
+        saveSheet.href = sheetUrl;
+        sheetFile = new File([blob], 'installation-signatures.png', { type: 'image/png' });
+        shareSheet.hidden = !(navigator.share && navigator.canShare?.({ files: [sheetFile] }));
+        sheetActions.hidden = false;
+        console.info('Signature sheet PNG encoded:', blob.size, 'bytes');
+        status.textContent = `Signature sheet ready (${blob.size.toLocaleString()} bytes). Preview it below.`;
       }, 'image/png');
     });
   </script>
